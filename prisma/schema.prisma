@@ -1,0 +1,201 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./database.db"
+}
+
+// Modelo para utilizadores do sistema (médicos, enfermeiros, admin)
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senha     String
+  role      Role     @default(ADMIN)
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relações
+  senhasEmitidas Senha[]
+  relatorios     Relatorio[]
+
+  @@map("usuarios")
+}
+
+// Modelo para pacientes
+model Paciente {
+  id                  String    @id @default(cuid())
+  nomeCompleto        String
+  numeroIdentificacao String    @unique
+  idade               Int
+  dataNascimento      DateTime?
+  telefone            String?
+  endereco            String?
+  responsavel         String? // Para crianças
+  telefoneResponsavel String? // Para crianças
+  ativo               Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relações
+  senhas          Senha[]
+  atendimentos    Atendimento[]
+  historicoMedico HistoricoMedico[]
+
+  @@map("pacientes")
+}
+
+// Modelo para senhas/tickets
+model Senha {
+  id          String          @id @default(cuid())
+  codigo      String          @unique // A001, B003, C008, etc.
+  prioridade  PrioridadeSenha
+  sintomas    String
+  status      StatusSenha     @default(AGUARDANDO)
+  posicaoFila Int?
+  tempoEspera Int? // em minutos
+
+  // Timestamps
+  emitidaEm    DateTime  @default(now())
+  iniciadaEm   DateTime?
+  finalizadaEm DateTime?
+
+  // Relações
+  pacienteId String
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+  usuarioId  String // Quem emitiu a senha
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id])
+
+  atendimento Atendimento?
+
+  @@map("senhas")
+}
+
+// Modelo para atendimentos
+model Atendimento {
+  id             String            @id @default(cuid())
+  diagnostico    String?
+  prescricao     String?
+  observacoes    String?
+  duracaoMinutos Int?
+  status         StatusAtendimento @default(EM_ANDAMENTO)
+
+  // Timestamps
+  iniciadoEm   DateTime  @default(now())
+  finalizadoEm DateTime?
+
+  // Relações
+  pacienteId String
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+  senhaId    String   @unique
+  senha      Senha    @relation(fields: [senhaId], references: [id])
+
+  @@map("atendimentos")
+}
+
+// Modelo para histórico médico dos pacientes
+model HistoricoMedico {
+  id        String   @id @default(cuid())
+  descricao String
+  tipo      String // Consulta, Exame, Internação, etc.
+  data      DateTime @default(now())
+
+  // Relações
+  pacienteId String
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+
+  @@map("historico_medico")
+}
+
+// Modelo para relatórios
+model Relatorio {
+  id        String        @id @default(cuid())
+  tipo      TipoRelatorio
+  titulo    String
+  periodo   String // "2024-01-01 to 2024-01-31"
+  dadosJson String // JSON com os dados do relatório
+  geradoEm  DateTime      @default(now())
+
+  // Filtros aplicados
+  dataInicio    DateTime?
+  dataFim       DateTime?
+  prioridades   String? // JSON array das prioridades filtradas
+  turnos        String? // JSON array dos turnos filtrados
+  faixasEtarias String? // JSON array das faixas etárias filtradas
+
+  // Relações
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("relatorios")
+}
+
+// Modelo para configurações do sistema
+model Configuracao {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  valor     String
+  descricao String?
+  tipo      String   @default("string") // string, number, boolean, json
+  updatedAt DateTime @updatedAt
+
+  @@map("configuracoes")
+}
+
+// Modelo para logs/auditoria do sistema
+model LogSistema {
+  id         String   @id @default(cuid())
+  acao       String // "SENHA_EMITIDA", "PACIENTE_CHAMADO", "ATENDIMENTO_INICIADO", etc.
+  entidade   String // "SENHA", "PACIENTE", "ATENDIMENTO"
+  entidadeId String
+  detalhes   String? // JSON com detalhes da ação
+  usuarioId  String?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  @@map("logs_sistema")
+}
+
+// Enums
+enum Role {
+  ADMIN
+  MEDICO
+  ENFERMEIRO
+  RECEPCIONIST
+}
+
+enum PrioridadeSenha {
+  MUITO_URGENTE
+  URGENTE
+  POUCO_URGENTE
+}
+
+enum StatusSenha {
+  AGUARDANDO
+  CHAMANDO
+  EM_ATENDIMENTO
+  ATENDIDO
+  CANCELADO
+  NAO_COMPARECEU
+}
+
+enum StatusAtendimento {
+  EM_ANDAMENTO
+  FINALIZADO
+  CANCELADO
+}
+
+enum TipoRelatorio {
+  DIARIO
+  SEMANAL
+  MENSAL
+  ANUAL
+  PERSONALIZADO
+  COMPARATIVO
+}

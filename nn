@@ -1,0 +1,8 @@
+User (paciente, admin, enfermeiro, recepiostia) -  id, nome, password, email, role
+
+Paciente  - nome, numeroIdentificacao, idade, encarregado, endereco, telfoneEncarregado, sintomas
+
+Senha - cod, prioridade, status, posicaoFila, tempoEspera, emitidomeEm, inciadoEm, finaliadoEm (pacinteId, userId)
+
+Atendimento -  senhaId, pacienteId
+Relatorio - titulo, periodo, prioridade, dataInicio, dataFinal (senhaId)
