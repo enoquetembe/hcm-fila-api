@@ -45,7 +45,17 @@ export class SenhaController {
       }
 
       // Gerar próximo código de senha
-      const codigo = await this.gerarProximoCodigoSenha(prioridade)
+      let codigo = await this.gerarProximoCodigoSenha(prioridade)
+
+      // Verificar se o código já existe (última verificação)
+      const codigoExistente = await prisma.senha.findUnique({
+        where: { codigo }
+      })
+
+      if (codigoExistente) {
+        // Regenerar código se necessário
+        codigo = await this.gerarProximoCodigoSenha(prioridade)
+      }
 
       // Calcular posição na fila
       const posicaoFila = await this.calcularPosicaoNaFila(prioridade)
@@ -84,7 +94,7 @@ export class SenhaController {
             prioridade: senha.prioridade,
             sintomas: senha.sintomas
           }),
-          usuarioId: userId,
+          usuarioId: 'cmf9obiec0000ry8ova66r922',
           ipAddress: request.ip
         }
       })
@@ -208,7 +218,7 @@ export class SenhaController {
             paciente: senhaAtualizada.paciente.nomeCompleto,
             prioridade: senhaAtualizada.prioridade
           }),
-          usuarioId: userId,
+          usuarioId: 'cmf9obiec0000ry8ova66r922',
           ipAddress: request.ip
         }
       })
@@ -280,7 +290,7 @@ export class SenhaController {
             statusAnterior: senha.status,
             novoStatus: status
           }),
-          usuarioId: userId,
+          usuarioId: 'cmf9obiec0000ry8ova66r922',
           ipAddress: request.ip
         }
       })
@@ -311,34 +321,55 @@ export class SenhaController {
 
     const prefixo = prefixos[prioridade as keyof typeof prefixos]
     
-    // Buscar a última senha com este prefixo hoje
-    const hoje = new Date()
-    hoje.setHours(0, 0, 0, 0)
-    const amanha = new Date(hoje)
-    amanha.setDate(amanha.getDate() + 1)
+    // Usar transação para evitar condições de corrida
+    return await prisma.$transaction(async (tx) => {
+      // Buscar a última senha com este prefixo hoje
+      const hoje = new Date()
+      const inicioDoDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
+      const fimDoDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1)
 
-    const ultimaSenha = await prisma.senha.findFirst({
-      where: {
-        codigo: {
-          startsWith: prefixo
+      const ultimaSenha = await tx.senha.findFirst({
+        where: {
+          codigo: {
+            startsWith: prefixo
+          },
+          emitidaEm: {
+            gte: inicioDoDia,
+            lt: fimDoDia
+          }
         },
-        emitidaEm: {
-          gte: hoje,
-          lt: amanha
+        orderBy: {
+          emitidaEm: 'desc'
         }
-      },
-      orderBy: {
-        codigo: 'desc'
+      })
+
+      let proximoNumero = 1
+      if (ultimaSenha) {
+        // Extrair número do código (remove o prefixo)
+        const numeroStr = ultimaSenha.codigo.substring(1)
+        const numeroAtual = parseInt(numeroStr)
+        
+        if (!isNaN(numeroAtual)) {
+          proximoNumero = numeroAtual + 1
+        }
       }
+
+      const novoCodigo = `${prefixo}${proximoNumero.toString().padStart(3, '0')}`
+      
+      // Verificar se o código já existe (double-check)
+      const codigoExistente = await tx.senha.findUnique({
+        where: { codigo: novoCodigo }
+      })
+
+      if (codigoExistente) {
+        // Se o código já existe, tentar o próximo número
+        return `${prefixo}${(proximoNumero + 1).toString().padStart(3, '0')}`
+      }
+
+      return novoCodigo
+    }, {
+      timeout: 5000 // Timeout de 5 segundos para a transação
     })
-
-    let proximoNumero = 1
-    if (ultimaSenha) {
-      const numeroAtual = parseInt(ultimaSenha.codigo.substring(1))
-      proximoNumero = numeroAtual + 1
-    }
-
-    return `${prefixo}${proximoNumero.toString().padStart(3, '0')}`
   }
 
   private async calcularPosicaoNaFila(prioridade: string): Promise<number> {
