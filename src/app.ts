@@ -4,6 +4,7 @@ import pacinteRotas from './routes/paciente-routes'
 import senhaRoutes from './routes/senha-routes'
 import dashboardRoutes from './routes/dashboard-routes'
 import authRoutes from './routes/auth-routes'
+import relatorioRoutes from './routes/relatorio-routes'
 
 export const app = fastify()
 
@@ -19,3 +20,4 @@ app.register(pacinteRotas)
 app.register(senhaRoutes)
 app.register(dashboardRoutes)
 app.register(authRoutes)
+app.register(relatorioRoutes)

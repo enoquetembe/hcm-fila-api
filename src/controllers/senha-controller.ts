@@ -56,7 +56,7 @@ export class SenhaController {
           prioridade,
           sintomas,
           pacienteId,
-          usuarioId: userId,
+          usuarioId: 'cmf9obiec0000ry8ova66r922',
           posicaoFila,
           status: 'AGUARDANDO'
         },
