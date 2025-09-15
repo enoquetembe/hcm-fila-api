@@ -1,12 +1,12 @@
-// src/controllers/paciente-controller.ts
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 
+// Schema atualizado - número de identificação não é mais obrigatório
 const createPacienteSchema = z.object({
   nomeCompleto: z.string().min(1, 'Nome completo é obrigatório').max(255),
-  numeroIdentificacao: z.string().min(1, 'Número de identificação é obrigatório'),
-  idade: z.number().int().min(0).max(18, 'Idade deve estar entre 0 e 18 anos'),
+  numeroIdentificacao: z.string().optional(), // Removida obrigatoriedade
+  idade: z.number().int().min(0).max(14, 'Idade deve estar entre 0 e 14 anos'), // Alterado para 0-14
   dataNascimento: z.string().optional().transform(val => val ? new Date(val) : undefined),
   telefone: z.string().optional(),
   endereco: z.string().optional(),
@@ -30,13 +30,15 @@ export class PacienteController {
       const dadosPaciente = createPacienteSchema.parse(request.body)
       const userId = (request as any).userId
 
-      // Verificar se já existe paciente com este número de identificação
-      const pacienteExistente = await prisma.paciente.findUnique({
-        where: { numeroIdentificacao: dadosPaciente.numeroIdentificacao }
-      })
+      // Verificar se já existe paciente com este número de identificação (apenas se foi fornecido)
+      if (dadosPaciente.numeroIdentificacao) {
+        const pacienteExistente = await prisma.paciente.findUnique({
+          where: { numeroIdentificacao: dadosPaciente.numeroIdentificacao }
+        })
 
-      if (pacienteExistente) {
-        return reply.code(409).send({ error: 'Já existe um paciente com este número de identificação' })
+        if (pacienteExistente) {
+          return reply.code(409).send({ error: 'Já existe um paciente com este número de identificação' })
+        }
       }
 
       const paciente = await prisma.paciente.create({
@@ -53,7 +55,7 @@ export class PacienteController {
             nome: paciente.nomeCompleto,
             numeroIdentificacao: paciente.numeroIdentificacao
           }),
-          usuarioId: userId,
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })
@@ -184,7 +186,7 @@ export class PacienteController {
         return reply.code(404).send({ error: 'Paciente não encontrado' })
       }
 
-      // Se está atualizando o número de identificação, verificar duplicatas
+      // Se está atualizando o número de identificação, verificar duplicatas (apenas se foi fornecido)
       if (dadosAtualizacao.numeroIdentificacao && 
           dadosAtualizacao.numeroIdentificacao !== pacienteExistente.numeroIdentificacao) {
         const duplicata = await prisma.paciente.findUnique({
@@ -211,7 +213,7 @@ export class PacienteController {
             nome: pacienteAtualizado.nomeCompleto,
             alteracoes: dadosAtualizacao
           }),
-          usuarioId: userId,
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })
@@ -258,7 +260,7 @@ export class PacienteController {
             nome: paciente.nomeCompleto,
             numeroIdentificacao: paciente.numeroIdentificacao
           }),
-          usuarioId: userId,
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })

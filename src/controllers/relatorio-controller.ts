@@ -65,7 +65,7 @@ export class RelatorioController {
           titulo: `Relatório ${tipo.toLowerCase()} - ${format(dataInicioFiltro, 'dd/MM/yyyy')} a ${format(dataFimFiltro, 'dd/MM/yyyy')}`,
           periodo: `${format(dataInicioFiltro, 'yyyy-MM-dd')} to ${format(dataFimFiltro, 'yyyy-MM-dd')}`,
           dadosJson: JSON.stringify(dadosRelatorio),
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           dataInicio: dataInicioFiltro,
           dataFim: dataFimFiltro,
           prioridades: prioridades ? JSON.stringify(prioridades) : null,
@@ -84,7 +84,7 @@ export class RelatorioController {
             tipo: relatorio.tipo,
             periodo: relatorio.periodo
           }),
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })
@@ -109,7 +109,7 @@ export class RelatorioController {
 
       const [relatorios, total] = await Promise.all([
         prisma.relatorio.findMany({
-          where: { usuarioId: 'cmf9obiec0000ry8ova66r922' },
+          where: { usuarioId: 'cmfl2x6790000ujtcp567bqma' },
           orderBy: { geradoEm: 'desc' },
           skip: (page - 1) * limit,
           take: limit,
@@ -122,7 +122,7 @@ export class RelatorioController {
             }
           }
         }),
-        prisma.relatorio.count({ where: { usuarioId: 'cmf9obiec0000ry8ova66r922' } })
+        prisma.relatorio.count({ where: { usuarioId: 'cmfl2x6790000ujtcp567bqma' } })
       ])
 
       reply.code(200).send({
@@ -148,7 +148,7 @@ export class RelatorioController {
       const relatorio = await prisma.relatorio.findFirst({
         where: { 
           id,
-          usuarioId: 'cmf9obiec0000ry8ova66r922' 
+          usuarioId: 'cmfl2x6790000ujtcp567bqma' 
         },
         include: {
           usuario: {
@@ -180,7 +180,7 @@ export class RelatorioController {
       const relatorio = await prisma.relatorio.findFirst({
         where: { 
           id,
-          usuarioId: 'cmf9obiec0000ry8ova66r922' 
+          usuarioId: 'cmfl2x6790000ujtcp567bqma' 
         }
       })
 
@@ -216,7 +216,7 @@ export class RelatorioController {
           entidade: 'RELATORIO',
           entidadeId: id,
           detalhes: JSON.stringify({ formato }),
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })

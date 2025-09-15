@@ -32,7 +32,7 @@ model Usuario {
 model Paciente {
   id                  String    @id @default(cuid())
   nomeCompleto        String
-  numeroIdentificacao String    @unique
+  numeroIdentificacao String?    @unique
   idade               Int
   dataNascimento      DateTime?
   telefone            String?

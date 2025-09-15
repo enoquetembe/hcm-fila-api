@@ -1,4 +1,3 @@
-// src/controllers/senha-controller.ts
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
@@ -47,16 +46,6 @@ export class SenhaController {
       // Gerar próximo código de senha
       let codigo = await this.gerarProximoCodigoSenha(prioridade)
 
-      // Verificar se o código já existe (última verificação)
-      const codigoExistente = await prisma.senha.findUnique({
-        where: { codigo }
-      })
-
-      if (codigoExistente) {
-        // Regenerar código se necessário
-        codigo = await this.gerarProximoCodigoSenha(prioridade)
-      }
-
       // Calcular posição na fila
       const posicaoFila = await this.calcularPosicaoNaFila(prioridade)
 
@@ -66,7 +55,7 @@ export class SenhaController {
           prioridade,
           sintomas,
           pacienteId,
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           posicaoFila,
           status: 'AGUARDANDO'
         },
@@ -94,7 +83,7 @@ export class SenhaController {
             prioridade: senha.prioridade,
             sintomas: senha.sintomas
           }),
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })
@@ -218,7 +207,7 @@ export class SenhaController {
             paciente: senhaAtualizada.paciente.nomeCompleto,
             prioridade: senhaAtualizada.prioridade
           }),
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })
@@ -290,7 +279,7 @@ export class SenhaController {
             statusAnterior: senha.status,
             novoStatus: status
           }),
-          usuarioId: 'cmf9obiec0000ry8ova66r922',
+          usuarioId: 'cmfl2x6790000ujtcp567bqma',
           ipAddress: request.ip
         }
       })
@@ -311,7 +300,7 @@ export class SenhaController {
     }
   }
 
-  // Métodos auxiliares privados
+  // Métodos auxiliares privados - CORRIGIDO
   private async gerarProximoCodigoSenha(prioridade: string): Promise<string> {
     const prefixos = {
       'MUITO_URGENTE': 'A',
@@ -328,7 +317,8 @@ export class SenhaController {
       const inicioDoDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
       const fimDoDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1)
 
-      const ultimaSenha = await tx.senha.findFirst({
+      // Buscar todas as senhas do dia com este prefixo
+      const senhasDoDia = await tx.senha.findMany({
         where: {
           codigo: {
             startsWith: prefixo
@@ -339,36 +329,53 @@ export class SenhaController {
           }
         },
         orderBy: {
-          emitidaEm: 'desc'
+          emitidaEm: 'asc'
         }
       })
 
+      // Encontrar o próximo número disponível
       let proximoNumero = 1
-      if (ultimaSenha) {
-        // Extrair número do código (remove o prefixo)
-        const numeroStr = ultimaSenha.codigo.substring(1)
-        const numeroAtual = parseInt(numeroStr)
-        
-        if (!isNaN(numeroAtual)) {
-          proximoNumero = numeroAtual + 1
-        }
-      }
-
-      const novoCodigo = `${prefixo}${proximoNumero.toString().padStart(3, '0')}`
       
-      // Verificar se o código já existe (double-check)
-      const codigoExistente = await tx.senha.findUnique({
-        where: { codigo: novoCodigo }
-      })
-
-      if (codigoExistente) {
-        // Se o código já existe, tentar o próximo número
-        return `${prefixo}${(proximoNumero + 1).toString().padStart(3, '0')}`
+      if (senhasDoDia.length > 0) {
+        // Extrair números existentes
+        const numerosExistentes = senhasDoDia.map(senha => {
+          const numeroStr = senha.codigo.substring(1)
+          return parseInt(numeroStr) || 0
+        }).filter(num => !isNaN(num))
+        
+        // Encontrar o maior número
+        const maiorNumero = Math.max(...numerosExistentes)
+        proximoNumero = maiorNumero + 1
       }
 
-      return novoCodigo
+      // Gerar código e verificar se já existe (double-check)
+      let tentativas = 0
+      let codigoGerado = ''
+      
+      while (tentativas < 10) { // Limite de tentativas para evitar loop infinito
+        codigoGerado = `${prefixo}${proximoNumero.toString().padStart(3, '0')}`
+        
+        // Verificar se o código já existe
+        const codigoExistente = await tx.senha.findUnique({
+          where: { codigo: codigoGerado }
+        })
+
+        if (!codigoExistente) {
+          break // Código disponível
+        }
+        
+        // Se existe, tentar próximo número
+        proximoNumero++
+        tentativas++
+      }
+
+      if (tentativas >= 10) {
+        throw new Error('Não foi possível gerar um código único após 10 tentativas')
+      }
+
+      return codigoGerado
     }, {
-      timeout: 5000 // Timeout de 5 segundos para a transação
+      timeout: 10000 // Timeout de 10 segundos para a transação
     })
   }
 
