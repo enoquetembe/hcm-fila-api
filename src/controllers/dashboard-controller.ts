@@ -1,30 +1,47 @@
 // src/controllers/dashboard-controller.ts
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { prisma } from '../lib/prisma'
+import { startOfDay, endOfDay, startOfMonth, endOfMonth, subDays } from 'date-fns'
 
 export class DashboardController {
   async getDashboardStats(request: FastifyRequest, reply: FastifyReply) {
     try {
       const hoje = new Date()
-      hoje.setHours(0, 0, 0, 0)
-      const amanha = new Date(hoje)
-      amanha.setDate(amanha.getDate() + 1)
+      const inicioHoje = startOfDay(hoje)
+      const fimHoje = endOfDay(hoje)
+      const inicioMes = startOfMonth(hoje)
+      const fimMes = endOfMonth(hoje)
+      const ontem = subDays(hoje, 1)
+      const inicioOntem = startOfDay(ontem)
+      const fimOntem = endOfDay(ontem)
 
-      // Buscar estatísticas em paralelo para melhor performance
+      // Buscar todas as estatísticas em paralelo
       const [
         totalSenhasHoje,
+        senhasOntem,
         senhasPorPrioridade,
         senhasAguardando,
-        atendimentosFinalizados,
-        pacientesUnicos,
-        tempoMedioEspera
+        atendimentosFinalizadosHoje,
+        pacientesUnicosHoje,
+        tempoMedioEsperaHoje,
+        totalSenhasMes
       ] = await Promise.all([
         // Total de senhas emitidas hoje
         prisma.senha.count({
           where: {
             emitidaEm: {
-              gte: hoje,
-              lt: amanha
+              gte: inicioHoje,
+              lt: fimHoje
+            }
+          }
+        }),
+
+        // Total de senhas ontem (para cálculo de crescimento)
+        prisma.senha.count({
+          where: {
+            emitidaEm: {
+              gte: inicioOntem,
+              lt: fimOntem
             }
           }
         }),
@@ -54,8 +71,8 @@ export class DashboardController {
           where: {
             status: 'ATENDIDO',
             finalizadaEm: {
-              gte: hoje,
-              lt: amanha
+              gte: inicioHoje,
+              lt: fimHoje
             }
           }
         }),
@@ -64,8 +81,8 @@ export class DashboardController {
         prisma.senha.findMany({
           where: {
             emitidaEm: {
-              gte: hoje,
-              lt: amanha
+              gte: inicioHoje,
+              lt: fimHoje
             }
           },
           select: {
@@ -74,8 +91,18 @@ export class DashboardController {
           distinct: ['pacienteId']
         }),
 
-        // Calcular tempo médio de espera
-        this.calcularTempoMedioEspera(hoje, amanha)
+        // Calcular tempo médio de espera HOJE
+        this.calcularTempoMedioEspera(inicioHoje, fimHoje),
+
+        // Total de senhas este mês
+        prisma.senha.count({
+          where: {
+            emitidaEm: {
+              gte: inicioMes,
+              lt: fimMes
+            }
+          }
+        })
       ])
 
       // Processar dados das prioridades
@@ -107,26 +134,15 @@ export class DashboardController {
         }
       })
 
-      // Crescimento em relação ao dia anterior
-      const ontem = new Date(hoje)
-      ontem.setDate(ontem.getDate() - 1)
-      const senhasOntem = await prisma.senha.count({
-        where: {
-          emitidaEm: {
-            gte: ontem,
-            lt: hoje
-          }
-        }
-      })
-
+      // Calcular crescimento em relação a ontem
       const crescimento = senhasOntem > 0 
-        ? ((totalSenhasHoje - senhasOntem) / senhasOntem * 100).toFixed(1)
-        : '0'
+        ? ((totalSenhasHoje - senhasOntem) / senhasOntem * 100)
+        : totalSenhasHoje > 0 ? 100 : 0
 
       const stats = {
         senhasHoje: {
           total: totalSenhasHoje,
-          crescimento: `${crescimento}%`
+          crescimento: `${crescimento > 0 ? '+' : ''}${crescimento.toFixed(1)}%`
         },
         prioridades: prioridadesCount,
         filaAtual: {
@@ -134,13 +150,14 @@ export class DashboardController {
           emAtendimento: prioridadesCount.MUITO_URGENTE + prioridadesCount.URGENTE + prioridadesCount.POUCO_URGENTE - senhasAguardando
         },
         atendimentos: {
-          finalizados: atendimentosFinalizados,
-          pacientesUnicos: pacientesUnicos.length
+          finalizados: atendimentosFinalizadosHoje,
+          pacientesUnicos: pacientesUnicosHoje.length
         },
         tempoMedio: {
-          espera: tempoMedioEspera,
+          espera: tempoMedioEsperaHoje,
           unidade: 'minutos'
         },
+        totalSenhasMes: totalSenhasMes,
         proximoPaciente: proximoPaciente ? {
           nome: proximoPaciente.paciente.nomeCompleto,
           codigo: proximoPaciente.codigo,
@@ -185,7 +202,7 @@ export class DashboardController {
             emitidaEm: 'asc'
           }
         ],
-        take: 10 // Apenas os próximos 10 da fila
+        take: 10
       })
 
       // Estatísticas rápidas
@@ -197,23 +214,14 @@ export class DashboardController {
         }
       })
 
+      // Calcular tempo de espera dinâmico para cada senha
+      const filaComTempo = fila.map(senha => ({
+        ...senha,
+        tempoEspera: Math.floor((new Date().getTime() - senha.emitidaEm.getTime()) / (1000 * 60))
+      }))
+
       reply.code(200).send({
-        fila: fila.map((senha, index) => ({
-          id: senha.id,
-          codigo: senha.codigo,
-          prioridade: senha.prioridade,
-          status: senha.status,
-          posicao: index + 1,
-          paciente: {
-            nome: senha.paciente.nomeCompleto,
-            idade: senha.paciente.idade,
-            identificacao: senha.paciente.numeroIdentificacao
-          },
-          tempoEspera: senha.emitidaEm 
-            ? Math.floor((new Date().getTime() - senha.emitidaEm.getTime()) / (1000 * 60))
-            : 0,
-          emitidaEm: senha.emitidaEm
-        })),
+        fila: filaComTempo,
         totalNaFila
       })
     } catch (error) {

@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
+import { startOfDay, endOfDay } from 'date-fns'
 
 const createSenhaSchema = z.object({
   pacienteId: z.string().min(1, 'ID do paciente é obrigatório'),
@@ -104,46 +105,133 @@ export class SenhaController {
     }
   }
 
+   private async calcularTempoMedioEspera(dataInicio: Date, dataFim: Date): Promise<number> {
+    const senhasFinalizadas = await prisma.senha.findMany({
+      where: {
+        status: 'ATENDIDO',
+        emitidaEm: {
+          gte: dataInicio,
+          lt: dataFim
+        },
+        finalizadaEm: {
+          not: null
+        }
+      },
+      select: {
+        emitidaEm: true,
+        finalizadaEm: true
+      }
+    })
+
+    if (senhasFinalizadas.length === 0) return 0
+
+    const tempoTotal = senhasFinalizadas.reduce((total, senha) => {
+      if (senha.finalizadaEm) {
+        const tempo = (senha.finalizadaEm.getTime() - senha.emitidaEm.getTime()) / (1000 * 60)
+        return total + tempo
+      }
+      return total
+    }, 0)
+
+    return Math.round(tempoTotal / senhasFinalizadas.length)
+  }
+  
+
   async getFilaAtual(request: FastifyRequest, reply: FastifyReply) {
-    try {
-      const fila = await prisma.senha.findMany({
+  try {
+    const fila = await prisma.senha.findMany({
+      where: {
+        status: {
+          in: ['AGUARDANDO', 'CHAMANDO', 'EM_ATENDIMENTO']
+        }
+      },
+      include: {
+        paciente: {
+          select: {
+            id: true,
+            nomeCompleto: true,
+            idade: true,
+            numeroIdentificacao: true
+          }
+        }
+      },
+      orderBy: [
+        {
+          prioridade: 'asc'
+        },
+        {
+          emitidaEm: 'asc'
+        }
+      ]
+    })
+
+    // Calcular tempo de espera dinâmico para cada senha
+    const filaComTempo = fila.map(senha => ({
+      ...senha,
+      tempoEspera: Math.floor((new Date().getTime() - senha.emitidaEm.getTime()) / (1000 * 60))
+    }))
+
+    // Estatísticas da fila - AGORA DINÂMICAS
+    const hoje = new Date()
+    const inicioHoje = startOfDay(hoje)
+    const fimHoje = endOfDay(hoje)
+
+    const [
+      totalSenhasHoje,
+      senhasPorPrioridade,
+      senhasAguardando,
+      tempoMedioEspera
+    ] = await Promise.all([
+      prisma.senha.count({
+        where: {
+          emitidaEm: {
+            gte: inicioHoje,
+            lt: fimHoje
+          }
+        }
+      }),
+      prisma.senha.groupBy({
+        by: ['prioridade'],
         where: {
           status: {
             in: ['AGUARDANDO', 'CHAMANDO', 'EM_ATENDIMENTO']
           }
         },
-        include: {
-          paciente: {
-            select: {
-              id: true,
-              nomeCompleto: true,
-              idade: true,
-              numeroIdentificacao: true
-            }
+        _count: true
+      }),
+      prisma.senha.count({
+        where: {
+          status: {
+            in: ['AGUARDANDO', 'CHAMANDO']
           }
-        },
-        orderBy: [
-          {
-            prioridade: 'asc' // MUITO_URGENTE primeiro
-          },
-          {
-            emitidaEm: 'asc' // Mais antigo primeiro dentro da mesma prioridade
-          }
-        ]
-      })
+        }
+      }),
+      this.calcularTempoMedioEspera(inicioHoje, fimHoje)
+    ])
 
-      // Estatísticas da fila
-      const estatisticas = await this.obterEstatisticasFila()
-
-      reply.code(200).send({
-        fila,
-        estatisticas
-      })
-    } catch (error) {
-      console.error('Erro ao buscar fila atual:', error)
-      reply.code(500).send({ error: 'Erro interno do servidor' })
+    const estatisticas = {
+      totalSenhasHoje,
+      senhasPorPrioridade: senhasPorPrioridade.reduce((acc: any, item) => {
+        acc[item.prioridade] = item._count
+        return acc
+      }, {
+        MUITO_URGENTE: 0,
+        URGENTE: 0,
+        POUCO_URGENTE: 0
+      }),
+      senhasAguardando,
+      tempoMedioEspera
     }
+
+    reply.code(200).send({
+      fila: filaComTempo,
+      estatisticas
+    })
+  } catch (error) {
+    console.error('Erro ao buscar fila atual:', error)
+    reply.code(500).send({ error: 'Erro interno do servidor' })
   }
+}
 
   async chamarProximoPaciente(request: FastifyRequest, reply: FastifyReply) {
     try {

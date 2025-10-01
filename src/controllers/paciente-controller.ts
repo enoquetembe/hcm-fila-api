@@ -1,3 +1,4 @@
+// src/controllers/paciente-controller.ts
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
